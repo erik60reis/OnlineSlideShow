@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SlideShow by Erik Reis</title>
+    <style>
+        .slide {
+            width: 100%;
+            height: 100%;
+            z-index: 8;
+        }
+
+        .slide-container {
+            width: 100%;
+            height: 100%;
+        }
+
+        .video {
+            position: absolute;
+            width: 80%;
+            height: 80%;
+            top: 10%;
+            left: 10%;
+            z-index: 10;
+        }
+
+        #hudcontainer {
+            position: absolute;
+            background-color: rgba(200, 200, 200, 0.2);
+            width: 8%;
+            height: 24%;
+            top: 2%;
+            left: 90%;
+        }
+
+        .text_green {
+            color: green;
+        }
+    </style>
+</head>
+<body>
+    <div id="instuctions">
+        <div>INSTRUÇÕES: configure seus slides do jeito que preferir aqui. </div>
+        <br/>
+        <div>caso o slide seja do tipo introdução, o campo de texto do lado</div>
+        <div>deve estar no formato:</div>
+        <div class="text_green">TEMA_DO_SLIDE</div>
+        <div class="text_green">https://link-da-imagem.com</div>
+        <br/>
+        <div>caso o slide seja do tipo tópicos, o campo de texto do lado</div>
+        <div>deve estar no formato:</div>
+        <div class="text_green">título</div>
+        <div class="text_green">tópico1</div>
+        <div class="text_green">tópico2</div>
+        <div class="text_green">tópico3</div>
+        <div class="text_green">tópico4</div>
+        <div class="text_green">...</div>
+        <br/>
+        <div>caso o slide seja do tipo imagem, o campo de texto do lado</div>
+        <div>deve estar no formato:</div>
+        <div class="text_green">https://link-da-imagem.com</div>
+        <br/>
+        <div>caso o slide seja do tipo vídeo, o campo de texto do lado</div>
+        <div>deve estar no formato:</div>
+        <div class="text_green">https://youtube.com/watch?v=VÍDEO</div>
+        <br/>
+        <div>caso o slide seja do tipo gráfico de barras, o campo de texto do lado</div>
+        <div>deve estar no formato:</div>
+        <div class="text_green">informação1:125,informação2:458,informação3:985</div>
+    </div>
+    <br/>
+    <br/>
+    <div id="slideconfig">
+        
+    </div>
+    <button id="startPresentationButton">APRESENTAR</button>
+    <button id="exportconfigbutton">EXPORTAR CONFIGURAÇÃO</button>
+    <br/>
+    <br/>
+    <br/>
+    <br/>
+    <br/>
+    <div>ou importar configuração...</div>
+    <input id="slidejsonconfiginput" type="text"></input> <br/>
+    <button id="startPresentationByJSONConfigButton">APRESENTAR</button>
+    <button id="exportToPPTX">EXPORTAR PARA POWERPOINT</button>
+    
+    <div id="fullscreencontainer">
+        <div id="hudcontainer">
+            <div id="presentationId"></div>
+            <div id="raisedhands"></div>
+        </div>
+        <div id="slides">
+        </div>
+    </div>
+    <script src="qrcode.min.js"></script>
+    <script src="pptxgen.bundle.js"></script>
+    <script src="FileSaver.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="chart.js"></script>
+    <script>
+        function delay(time) {
+            return new Promise(resolve => setTimeout(resolve, time));
+        }
+
+        let slidetemplatecount = 10;
+
+        let slidecontainers = document.getElementsByClassName("slide-container");
+
+        let currentIndex = 0;
+
+        let socket = io();
+        
+        for (let index = 0; index < slidetemplatecount; index++) {
+            document.getElementById("slideconfig").innerHTML += `
+            <div>------------------------------------SLIDE ${index + 1}--------------------------------------</div>
+            <select class="slidetype">
+                <option value="introduction">introdução</option>
+                <option value="topics">tópicos</option>
+                <option value="image">imagem</option>
+                <option value="video">vídeo</option>
+                <option value="qrcode">qr code</option>
+                <option value="barchart">gráfico de barras</option>
+            </select>
+            <span>
+            <textarea class="slideconfig" type="text" size="50"></textarea>
+            </span>
+            <br/>
+            <br/>
+            `;
+        }
+
+        const SlidesTemplate = {
+            introduction: (text, imageurl = '', textColor = 'black', backgroundColor = 'white') => {
+                return [
+                    [
+                        {type: "rectangle", color: backgroundColor, x: 0, y: 0, width: 1920, height: 1080},
+                        {type: "image", url: imageurl, x: 200, y: 200, width: 630, height: 630},
+                        {type: "text", font: "80px AftaSerif", color: textColor, text, x: 950, y: 508}
+                    ]
+                ]
+            },
+            topics: (topics, textColor = 'black', backgroundColor = 'white') => {
+                let title = topics.shift();
+
+                let templateComponentsBase = [
+                    {type: "rectangle", color: backgroundColor, x: 0, y: 0, width: 1920, height: 1080},
+                    {type: "text", font: "85px AftaSerif", color: textColor, text: title, x: 85, y: 85},
+                ];
+
+                let slides = [];
+
+                let slide = templateComponentsBase;
+
+                for (let questionindex = 0; questionindex < topics.length; questionindex++) {
+                    const question = topics[questionindex];
+                    slide.push({type: "text", font: "45px AftaSerif", color: textColor, text: `•  ${question}`, x: 140, y: 220 + 70 * questionindex});
+                    slides.push(slide.slice());
+                }
+
+
+                return slides;
+            },
+            image: (imageurl, backgroundColor = 'white') => {
+                return [
+                    [
+                        {type: "rectangle", color: backgroundColor, x: 0, y: 0, width: 1920, height: 1080},
+                        {type: "image", url: imageurl, x: 100, y: 100, width: 1700, height: 900},
+                    ]
+                ]
+            },
+            video: (videourl, backgroundColor = 'white') => {
+                return [
+                    [
+                        {type: "rectangle", color: backgroundColor, x: 0, y: 0, width: 1920, height: 1080},
+                        {type: "video", url: videourl},
+                    ]
+                ]
+            },
+            qrcode: (qrcodeurl, qrcodecolor = 'black', backgroundColor = 'white') => {
+                return [
+                    [
+                        {type: "rectangle", color: backgroundColor, x: 0, y: 0, width: 1920, height: 1080},
+                        {type: "qrcode", url: qrcodeurl, color: qrcodecolor, x: 760, y: 310, width: 400, height: 400},
+                    ]
+                ]
+            },
+            barchart: (data, backgroundColor = 'white') => {
+                return [
+                    [
+                        {type: "rectangle", color: backgroundColor, x: 0, y: 0, width: 1920, height: 1080},
+                        {type: "barchart", data: data, x: 192, y: 108, width: 1536, height: 864},
+                    ]
+                ]
+            }
+        };
+
+        //const currentslidesconfig = SlidesTemplate.topics(["O que é Mata Atlântica ?", "Pra que ela serve ?", "O Quanto ela foi desmatada ?"]);
+
+        //let template1config = SlidesTemplate.image("https://imgs.search.brave.com/0Nj-8uhcj193U1F6HvvlUCIUVARyntNy7C7NiUFf1G0/rs:fit:500:0:0/g:ce/aHR0cHM6Ly9jb2xv/cmluZG8ub3JnL3dw/LWNvbnRlbnQvdXBs/b2Fkcy8yMDIxLzA3/L2Fydm9yZS1wYXJh/LXBpbnRhci5qcGc", "lightgray");
+        //let template1config = SlidesTemplate.introduction("Mata Atlântica", "https://imgs.search.brave.com/0Nj-8uhcj193U1F6HvvlUCIUVARyntNy7C7NiUFf1G0/rs:fit:500:0:0/g:ce/aHR0cHM6Ly9jb2xv/cmluZG8ub3JnL3dw/LWNvbnRlbnQvdXBs/b2Fkcy8yMDIxLzA3/L2Fydm9yZS1wYXJh/LXBpbnRhci5qcGc");
+        //let template2config = SlidesTemplate.topics(["Antes de começar...", "O que é Mata Atlântica ?", "Pra que ela serve ?", "O Quanto ela foi desmatada ?"]);
+
+        let currentslidesconfig = [];
+
+        
+
+        document.getElementById("exportconfigbutton").onclick = () => {
+            preparePresentation(true);
+        };
+
+
+        document.getElementById("startPresentationByJSONConfigButton").onclick = () => {
+            startPresentation(JSON.parse(document.getElementById("slidejsonconfiginput").value));
+        };
+
+
+        document.getElementById("startPresentationButton").onclick = () => {
+            preparePresentation(false);
+        }
+
+        function preparePresentation(isExportConfigurationFunction = false, exportToPPTX = false) {
+            currentslidesconfig = [];
+            for (let index = 0; index < slidetemplatecount; index++) {
+                const slidetype = document.getElementsByClassName("slidetype")[index].value;
+                const slidetemplateconfig = document.getElementsByClassName("slideconfig")[index].value;
+
+                const slidetemplateconfigsplitted = slidetemplateconfig.split("\n");
+
+                if (slidetemplateconfig !== "") {
+                    if (slidetype === "introduction") {
+                        currentslidesconfig.push(...SlidesTemplate.introduction(...slidetemplateconfigsplitted));
+                    }
+                    if (slidetype === "topics") {
+                        currentslidesconfig.push(...SlidesTemplate.topics([...slidetemplateconfigsplitted]));
+                    }
+                    if (slidetype === "image") {
+                        currentslidesconfig.push(...SlidesTemplate.image(...slidetemplateconfigsplitted));
+                    }
+                    if (slidetype === "video") {
+                        currentslidesconfig.push(...SlidesTemplate.video(...slidetemplateconfigsplitted));
+                    }
+                    if (slidetype === "qrcode") {
+                        currentslidesconfig.push(...SlidesTemplate.qrcode(...slidetemplateconfigsplitted));
+                    }
+                    if (slidetype === "barchart") {
+                        currentslidesconfig.push(...SlidesTemplate.barchart(...slidetemplateconfigsplitted));
+                    }
+                }
+            }
+            if (isExportConfigurationFunction) {
+                document.getElementById("slidejsonconfiginput").value = JSON.stringify(currentslidesconfig);
+            }else{
+                startPresentation(currentslidesconfig, exportToPPTX);
+            }
+        }
+        
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'ArrowRight') {
+                // Move to the next canvas
+                currentIndex = Math.min(currentIndex + 1, slidecontainers.length - 1);
+                showSlide(currentIndex);
+            } else if (event.key === 'ArrowLeft') {
+                // Move to the previous canvas
+                currentIndex = Math.max(currentIndex - 1, 0);
+                showSlide(currentIndex);
+            } else if (event.key === 'Escape') {
+                document.getElementById("slides").innerHTML = "";
+            }
+        });
+
+        // Function to show the canvas at given index
+        function showSlide(index) {
+            // Hide all slides
+            for (let i = 0; i < document.getElementsByClassName("slide").length; i++) {
+                slidecontainers[i].style.display = 'none';
+            };
+            slidecontainers[index].style.display = 'block';
+            enterFullScreen(document.getElementById("fullscreencontainer"));
+        }
+
+        function enterFullScreen(element) {
+            element.requestFullscreen().catch(err => {
+                console.log(`Error attempting to enable full-screen mode: ${err.message}`);
+            });
+        }
+
+        let usedImages = [];
+        async function startPresentation(slidesconfig, exportToPPTX = false) {
+
+            for (let templateslideindex = 0; templateslideindex < slidesconfig.length; templateslideindex++) {
+                const components = slidesconfig[templateslideindex];
+                for (const slidecomponent of components) {
+                    if (slidecomponent.type === "image") {
+                        let img = new Image();
+                        img.src = slidecomponent.url;
+                        usedImages.push(img);
+                    }
+                    if (slidecomponent.type === "qrcode") {
+                        let tempdiv = document.createElement("div");
+                        let qr = new QRCode(tempdiv, {
+                            text: slidecomponent.url,
+                            width: 500,
+                            height: 500,
+                            colorDark: slidecomponent.color
+                        });
+                        let tempcanvas = tempdiv.querySelector('canvas');
+                        let img = new Image();
+                        img.src = tempcanvas.toDataURL();
+                        usedImages.push(img);
+                    }
+                    if (slidecomponent.type === "barchart") {
+                        let tempcanvas = document.createElement("canvas");
+                        tempcanvas.width = slidecomponent.width;
+                        tempcanvas.height = slidecomponent.height;
+                        let chartdata = slidecomponent.data.split(",");
+                        let labels = [];
+                        let labelvalues = [];
+                        for (let i = 0; i < chartdata.length; i++) {
+                            const label = chartdata[i].split(":")[0];
+                            const labelvalue = chartdata[i].split(":")[1];
+                            labels.push(label);
+                            labelvalues.push(labelvalue);
+                        }
+                        new Chart(tempcanvas, {
+                            type: 'bar',
+                            data: {
+                                labels: labels,
+                                datasets: [{
+                                    label: '',
+                                    data: labelvalues,
+                                    borderWidth: 1
+                                }]
+                            },
+                            options: {
+                                indexAxis: 'x',
+                                scales: {
+                                    y: {
+                                        beginAtZero: true
+                                    }
+                                }
+                            }
+                        });
+                        document.body.appendChild(tempcanvas);                        
+                        await delay(1200);
+                        let img = new Image();
+                        img.src = tempcanvas.toDataURL();
+                        console.log(img.src);
+                        usedImages.push(img);
+                        tempcanvas.remove();
+                    }
+                }
+            }
+
+            if (usedImages.length <= 0) {
+                loadslides(slidesconfig, exportToPPTX);
+            }else{
+                usedImages[usedImages.length - 1].onload = () => {
+                    loadslides(slidesconfig, exportToPPTX);
+                }
+            }
+        }
+
+        function loadslides(slidesconfig, exportToPPTX) {
+            let usedImageIndex = 0;
+
+            document.getElementById("slides").innerHTML = "";
+
+            for (let i = 0; i < slidesconfig.length; i++) {
+                let videolayer = slidesconfig[i].find((element) => element.type == "video");
+                if (videolayer) {
+                    document.getElementById("slides").innerHTML += `<div class="slide-container"><canvas class="slide" width="1920" height="1080"></canvas><iframe class="video" width="854" height="480" src="https://www.youtube-nocookie.com/embed/${videolayer.url.replace("https://www.youtube.com/watch?v=", "").replace("https://youtube.be/", "").replace("https://youtube.com/shorts/")}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>`;
+                }else{
+                    document.getElementById("slides").innerHTML += `<div class="slide-container"><canvas class="slide" width="1920" height="1080"></canvas></div>`;
+                }
+            }
+
+            slidecontainers = document.getElementsByClassName("slide-container");
+            const slidescanvas = document.getElementsByClassName("slide");
+
+            for (let templateslideindex = 0; templateslideindex < slidesconfig.length; templateslideindex++) {
+                const components = slidesconfig[templateslideindex];     
+                const slidecontatiner = slidecontainers[templateslideindex];    
+                const slidectx = slidescanvas[templateslideindex].getContext('2d');            
+                for (const slidecomponent of components) {
+                    if (slidecomponent.type === "text") {
+                        slidectx.font = slidecomponent.font;
+                        slidectx.fillStyle = slidecomponent.color;
+                        slidectx.fillText(slidecomponent.text, slidecomponent.x, slidecomponent.y);
+                    }
+                    if (slidecomponent.type === "rectangle") {
+                        slidectx.fillStyle = slidecomponent.color;
+                        slidectx.fillRect(slidecomponent.x, slidecomponent.y, slidecomponent.width, slidecomponent.height);
+                    }
+                    if (["image", "qrcode", "barchart"].includes(slidecomponent.type)) {
+                        let image = usedImages[usedImageIndex];
+                        usedImageIndex += 1;
+                        slidectx.drawImage(image, slidecomponent.x, slidecomponent.y, slidecomponent.width, slidecomponent.height);
+                    }
+                    slidectx.fillStyle = "darkgreen";
+                    slidectx.font = "20px AftaSerif";
+                    slidectx.fillText("slideshow.erikreis.fun", 1500, 1020);
+                }
+            }
+
+            currentIndex = 0;
+
+            if (exportToPPTX) {
+                const pptx = new PptxGenJS();
+
+                // Loop through each slide container
+                for (let i = 0; i < slidecontainers.length; i++) {
+                    const slideContainer = slidecontainers[i];
+                    const canvas = slideContainer.querySelector('.slide');
+
+                    // Get image data from canvas
+                    const imageData = canvas.toDataURL();
+
+                    // Check if the slide contains a YouTube video
+
+                    let videolayer = slidesconfig[i].find((element) => element.type == "video");
+
+                    const slide = pptx.addSlide();
+
+                    slide.addImage({ data: imageData, x: 0, y: 0, w: '100%', h: '100%' });
+
+                    if (videolayer) {
+                        const videoUrl = videolayer.url;
+
+                        // Add video to the slide (adjust position and size as needed)
+                        slide.addMedia({ type: 'online', link: `https://www.youtube-nocookie.com/embed/${videolayer.url.replace("https://www.youtube.com/watch?v=", "").replace("https://youtube.be/", "").replace("https://youtube.com/shorts/")}`, x: 0.5, y: 0.5, w: 9, h: 5 });
+                    }
+                }
+
+                document.getElementById("slides").innerHTML = "";
+
+                // Generate the PowerPoint file
+                const pptxBlob = pptx.write('blob'); // Get base64-encoded PowerPoint data
+
+                pptxBlob.then((result) => {
+                    saveAs(result, 'presentation.pptx');
+                });
+            } else {
+                showSlide(currentIndex);
+
+                
+                socket.emit("start presentation")
+            }
+        }
+
+        document.getElementById('exportToPPTX').onclick = function() {
+
+            startPresentation(JSON.parse(document.getElementById("slidejsonconfiginput").value), true);
+
+        };
+
+        
+        function updateRaisedHands(raisedhands) {
+            document.getElementById("raisedhands").innerHTML = "";
+            for (let i = 0; i < raisedhands.length; i++) {
+                const user = raisedhands[i];
+                document.getElementById("raisedhands").innerHTML += `<div style="font-size: 15px;"><img src="handicon.png" width="18" height="18">${user}</div>`;
+            }
+        }
+
+        socket.on("update raised hands", (raisedhands) => {
+            updateRaisedHands(raisedhands);
+        });
+
+        socket.on("presentation created", (presentationId) => {
+            document.getElementById("presentationId").innerHTML = `${window.location.href}${presentationId}`;
+        });
+
+    </script>
+</body>
+</html>
