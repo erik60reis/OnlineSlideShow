@@ -34,6 +34,11 @@
             left: 90%;
         }
 
+        #presentationId {
+            position: absolute;
+            font-size: 12px;
+        }
+
         .text_green {
             color: green;
         }
@@ -87,8 +92,8 @@
     <button id="exportToPPTX">EXPORTAR PARA POWERPOINT</button>
     
     <div id="fullscreencontainer">
+        <div id="presentationId"></div>
         <div id="hudcontainer">
-            <div id="presentationId"></div>
             <div id="raisedhands"></div>
         </div>
         <div id="slides">
@@ -103,6 +108,8 @@
         function delay(time) {
             return new Promise(resolve => setTimeout(resolve, time));
         }
+
+        let presentationId = "";
 
         let slidetemplatecount = 10;
 
@@ -468,7 +475,8 @@
             updateRaisedHands(raisedhands);
         });
 
-        socket.on("presentation created", (presentationId) => {
+        socket.on("presentation created", (newPresentationId) => {
+            presentationId = newPresentationId;
             document.getElementById("presentationId").innerHTML = `${window.location.href}${presentationId}`;
         });
 

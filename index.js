@@ -80,6 +80,9 @@ app.use('/', express.static(path.join(rootpath, 'public')));
 app.get('/:presentationId', (req, res) => {
     res.send(`
 <html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.5, user-scalable=no" />
+</head>
 <body>
 <div>
 <input id="nickname" type="text" placeholder="digite seu nome" length="150"></input><button id="joinButton">ENTRAR</button>
