@@ -2,6 +2,17 @@ const express = require("express");
 const http = require("http");
 const path = require("path");
 const socketio = require("socket.io");
+const expressHandlebars = require('express-handlebars');
+
+const app = express();
+
+const handlebars = expressHandlebars.create({
+    defaultLayout: false,
+    extname: '.html'
+});
+
+app.engine('.html', handlebars.engine);
+app.set('view engine', '.html');
 
 global.presentations = {};
 
@@ -16,7 +27,6 @@ function nextPresentationId() {
 global.appconfig = require('./config.json');
 global.rootpath = __dirname;
 
-const app = express();
 const httpServer = http.createServer(app);
 const io = new socketio.Server(httpServer);
 
@@ -33,7 +43,16 @@ io.on("connection", (socket) => {
             raisedhands: [],
         };
         socket.emit("presentation created", presentationid);
-        console.log("presentation created");
+    }
+  });
+  socket.on("set multiple choice options", (MultipleChoiceOptions) => {
+    let presentationid = Object.keys(presentations).find(p => presentations[p].host == socket);
+    if (presentationid && presentations[presentationid]) {
+        for (let i = 0; i < presentations[presentationid].clients.length; i++) {
+            const client = presentations[presentationid].clients[i];
+            client.emit("send multiple choice options", MultipleChoiceOptions);
+            
+        }
     }
   });
   socket.on('join presentation', (presentationid, nickname = 'User') => {
@@ -45,7 +64,6 @@ io.on("connection", (socket) => {
 
     if (presentationid && presentations[presentationid]) {
         presentations[presentationid].clients.push(socket);
-        console.log("client added");
     }
   });
   socket.on("toggle raise hand", () => {
@@ -56,8 +74,13 @@ io.on("connection", (socket) => {
         }else{
             presentations[presentationid].raisedhands.push(socket);
         }
-        console.log("hand toggled");
         presentations[presentationid].host.emit("update raised hands", presentations[presentationid].raisedhands.map(u => u.nickname));
+    }
+  });
+  socket.on("send multiple choice answer", (choosedoption) => {
+    let presentationid = Object.keys(presentations).find(p => presentations[p].clients.includes(socket));
+    if (presentationid && presentations[presentationid]) {
+        presentations[presentationid].host.emit("add multiple choice user answer", socket.nickname, choosedoption);
     }
   });
   socket.on('disconnect', () => {
@@ -78,41 +101,7 @@ io.on("connection", (socket) => {
 
 app.use('/', express.static(path.join(rootpath, 'public')));
 app.get('/:presentationId', (req, res) => {
-    res.send(`
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1.5, user-scalable=no" />
-</head>
-<body>
-<div>
-<input id="nickname" type="text" placeholder="digite seu nome" length="150"></input><button id="joinButton">ENTRAR</button>
-</div>
-<br/>
-<br/>
-<br/>
-<br/>
-<button id="raiseHandButton" style="font-size: 25px">LEVANTAR MÃO</button>
-<script src="/socket.io/socket.io.js"></script>
-<script>
-let presentationId = "${req.params.presentationId}";
-let nickname = "USER";
-let socket = io();
-document.getElementById("joinButton").onclick = () => {
-    nickname = document.getElementById("nickname").value;
-    socket.emit("join presentation", presentationId, nickname);
-};
-
-socket.on("connect", () => {
-    console.log("connected");
-});
-
-document.getElementById("raiseHandButton").onclick = () => {
-    socket.emit("toggle raise hand");
-};
-</script>
-</body>
-</html>
-    `);
+    res.render(path.join(rootpath, 'views', 'joinpresentation.html'), {presentationId: req.params.presentationId});
 });
 
 httpServer.listen(3000);

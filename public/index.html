@@ -73,6 +73,15 @@
         <div>caso o slide seja do tipo gráfico de barras, o campo de texto do lado</div>
         <div>deve estar no formato:</div>
         <div class="text_green">informação1:125,informação2:458,informação3:985</div>
+        <br/>
+        <div>caso o slide seja do tipo múltipla escolhs, o campo de texto do lado</div>
+        <div>deve estar no formato:</div>
+        <div class="text_green">Pergunta</div>
+        <div class="text_green">Opção 1</div>
+        <div class="text_green">Opção 2</div>
+        <div class="text_green">Opção 3</div>
+        <div class="text_green">Opção 4</div>
+        <div class="text_green">...</div>
     </div>
     <br/>
     <br/>
@@ -90,7 +99,7 @@
     <input id="slidejsonconfiginput" type="text"></input> <br/>
     <button id="startPresentationByJSONConfigButton">APRESENTAR</button>
     <button id="exportToPPTX">EXPORTAR PARA POWERPOINT</button>
-    
+
     <div id="fullscreencontainer">
         <div id="presentationId"></div>
         <div id="hudcontainer">
@@ -99,6 +108,9 @@
         <div id="slides">
         </div>
     </div>
+
+    <div id="questionresponses"></div>
+
     <script src="qrcode.min.js"></script>
     <script src="pptxgen.bundle.js"></script>
     <script src="FileSaver.min.js"></script>
@@ -108,6 +120,8 @@
         function delay(time) {
             return new Promise(resolve => setTimeout(resolve, time));
         }
+
+        let CurrentMultipleChoiceOptions = [];
 
         let presentationId = "";
 
@@ -129,6 +143,7 @@
                 <option value="video">vídeo</option>
                 <option value="qrcode">qr code</option>
                 <option value="barchart">gráfico de barras</option>
+                <option value="multiplechoice">múltipla escolha</option>
             </select>
             <span>
             <textarea class="slideconfig" type="text" size="50"></textarea>
@@ -200,7 +215,15 @@
                         {type: "barchart", data: data, x: 192, y: 108, width: 1536, height: 864},
                     ]
                 ]
-            }
+            },
+            multiplechoice: (...options) => {
+                return [
+                    [
+                        {type: "rectangle", color: 'white', x: 0, y: 0, width: 1920, height: 1080},
+                        {type: "multiplechoice", options: options},
+                    ]
+                ]
+            },
         };
 
         //const currentslidesconfig = SlidesTemplate.topics(["O que é Mata Atlântica ?", "Pra que ela serve ?", "O Quanto ela foi desmatada ?"]);
@@ -219,6 +242,7 @@
 
 
         document.getElementById("startPresentationByJSONConfigButton").onclick = () => {
+            currentslidesconfig = JSON.parse(document.getElementById("slidejsonconfiginput").value);
             startPresentation(JSON.parse(document.getElementById("slidejsonconfiginput").value));
         };
 
@@ -254,6 +278,9 @@
                     if (slidetype === "barchart") {
                         currentslidesconfig.push(...SlidesTemplate.barchart(...slidetemplateconfigsplitted));
                     }
+                    if (slidetype === "multiplechoice") {
+                        currentslidesconfig.push(...SlidesTemplate.multiplechoice(...slidetemplateconfigsplitted));
+                    }
                 }
             }
             if (isExportConfigurationFunction) {
@@ -267,24 +294,34 @@
             if (event.key === 'ArrowRight') {
                 // Move to the next canvas
                 currentIndex = Math.min(currentIndex + 1, slidecontainers.length - 1);
-                showSlide(currentIndex);
+                let multiplechoiceelement = currentslidesconfig[currentIndex].find((element) => element.type == "multiplechoice");
+                showSlide(currentIndex, (multiplechoiceelement ? multiplechoiceelement.options : []));
             } else if (event.key === 'ArrowLeft') {
                 // Move to the previous canvas
                 currentIndex = Math.max(currentIndex - 1, 0);
-                showSlide(currentIndex);
+                let multiplechoiceelement = currentslidesconfig[currentIndex].find((element) => element.type == "multiplechoice");
+                showSlide(currentIndex, (multiplechoiceelement ? multiplechoiceelement.options : []));
             } else if (event.key === 'Escape') {
                 document.getElementById("slides").innerHTML = "";
             }
         });
 
         // Function to show the canvas at given index
-        function showSlide(index) {
+        function showSlide(index, MultipleChoiceOptions = []) {
             // Hide all slides
             for (let i = 0; i < document.getElementsByClassName("slide").length; i++) {
                 slidecontainers[i].style.display = 'none';
             };
             slidecontainers[index].style.display = 'block';
             enterFullScreen(document.getElementById("fullscreencontainer"));
+
+            if (MultipleChoiceOptions && MultipleChoiceOptions.length >= 2) {
+                CurrentMultipleChoiceOptions = MultipleChoiceOptions;
+                socket.emit('set multiple choice options', MultipleChoiceOptions);
+            }else{
+                CurrentMultipleChoiceOptions = [];
+                socket.emit('set multiple choice options', null);
+            }
         }
 
         function enterFullScreen(element) {
@@ -449,10 +486,11 @@
                     saveAs(result, 'presentation.pptx');
                 });
             } else {
-                showSlide(currentIndex);
+                let multiplechoiceelement = slidesconfig[currentIndex].find((element) => element.type == "multiplechoice");
+                showSlide(currentIndex, (multiplechoiceelement ? multiplechoiceelement.options : []));
 
                 
-                socket.emit("start presentation")
+                socket.emit("start presentation");
             }
         }
 
@@ -473,6 +511,10 @@
 
         socket.on("update raised hands", (raisedhands) => {
             updateRaisedHands(raisedhands);
+        });
+
+        socket.on("add multiple choice user answer", (nickname, choosedanswer) => {
+            document.getElementById("questionresponses").innerHTML += `${nickname} ---> ${CurrentMultipleChoiceOptions[choosedanswer]}<br/>`;
         });
 
         socket.on("presentation created", (newPresentationId) => {
