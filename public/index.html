@@ -505,7 +505,7 @@
 
         let usedImages = [];
         async function startPresentation(slidesconfig, exportToPPTX = false) {
-
+            usedImages = [];
             for (let templateslideindex = 0; templateslideindex < slidesconfig.length; templateslideindex++) {
                 const components = slidesconfig[templateslideindex];
                 for (const slidecomponent of components) {
